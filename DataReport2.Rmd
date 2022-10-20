@@ -17,6 +17,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 Analysis of OA_activitydat_20190302_BIOL3207.csv to generate summary statistics (mean, SD, N) for each fish species average activity for each treatment
+```{r}
+data <- read_csv("OA_activitydat_20190302_BIOL3207.csv")
+data_clean <- data[which(complete.cases(data)),]
+data_clean <- select(data_clean, -...1) # Drop irrelevant columns
+
+summary <- data_clean %>% group_by(species, treatment) %>% summarise(mean(activity), sd(activity), n())
+flextable(summary)
+```
 
 Merge these summary statistics with the meta-data in clark_paper_data.csv
 
