@@ -15,22 +15,63 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Load packages
+```{r}
+library(pacman)
+p_load(bookdown, tidyverse, flextable, metafor)
+```
 
 Analysis of OA_activitydat_20190302_BIOL3207.csv to generate summary statistics (mean, SD, N) for each fish species average activity for each treatment
 ```{r}
 data <- read_csv("OA_activitydat_20190302_BIOL3207.csv")
 data_clean <- data[which(complete.cases(data)),]
-data_clean <- select(data_clean, -...1) # Drop irrelevant columns
+data_clean <- select(data_clean, -...1) # Remove irrelevant column
 
-summary <- data_clean %>% group_by(species, treatment) %>% summarise(mean(activity), sd(activity), n())
-flextable(summary)
+summary_stats <- data_clean %>% group_by(species, treatment) %>% summarise(n(), mean(activity), sd(activity))
+summary_stats <- pivot_wider(data=summary_stats, names_from="treatment", values_from=c("n()", "mean(activity)", "sd(activity)"))
+summary_stats
 ```
 
 Merge these summary statistics with the meta-data in clark_paper_data.csv
+```{r}
+clark_data <- read_csv("clark_paper_data.csv")
+clark_data <- clark_data %>% slice(rep(1:n(), each = 6)) #Copy row of info 6 times according to formatting of meta-analysis data set
+
+clark_data <- mutate(clark_data, Species=summary_stats$species, .after=10)
+clark_data[which(clark_data$Species=="acantho"),]$Species <- "Acanthochromis polyacanthus"
+clark_data[which(clark_data$Species=="ambon"),]$Species <- "Pomacentrus amboinensis"
+clark_data[which(clark_data$Species=="chromis"),]$Species <- "Chromis atripectoralis"
+clark_data[which(clark_data$Species=="humbug"),]$Species <- "Dascyllus aruanus"
+clark_data[which(clark_data$Species=="lemon"),]$Species <- "Pomacentrus moluccensis"
+clark_data[which(clark_data$Species=="whitedams"),]$Species <- "Dischistodus perspicillatus"
+
+clark_data <- mutate(clark_data, 
+                    ctrl.n=summary_stats$`n()_control`, 
+                    ctrl.mean=summary_stats$`mean(activity)_control`, 
+                    ctrl.sd=summary_stats$`sd(activity)_control`, 
+                    oa.n=summary_stats$`n()_CO2`, 
+                    oa.mean=summary_stats$`mean(activity)_CO2`, 
+                    oa.sd=summary_stats$`sd(activity)_CO2`)
+clark_data
+```
 
 Merge this combined summary statistics/meta-data with the larger meta-analysis data set in ocean_meta_data.csv
+```{r}
+meta_data <- read_csv("ocean_meta_data.csv")
+clark_data$`Pub year IF` <- as.character(clark_data$`Pub year IF`) #Changing variable class to character to match meta-analysis data set 
+clark_data$`2017 IF` <- as.character(clark_data$`2017 IF`) #Changing variable class to character to match meta-analysis data set 
+
+meta_data <- full_join(meta_data, clark_data)
+```
 
 Calculate the log response ratio (lnRR) effect size for every row of the dataframe using metafor’s escalc() function
+```{r}
+effect_sizes <- metafor::escalc(measure = "ROMC", 
+                                m1i = ctrl.mean, m2i = oa.mean, 
+                                sd1i = ctrl.sd, sd2i = oa.sd, 
+                                ri = , ni = `Average n`, 
+                                data = meta_data)
+```
 
 Meta-analytic model fitted to the data that controls for the sampling variance of lnRR. The model should include a random effect of study and observation. Use metafor’s rma.mv() function.
 
