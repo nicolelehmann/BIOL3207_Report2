@@ -15,13 +15,13 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Load packages
+Load required packages
 ```{r}
 library(pacman)
 p_load(bookdown, tidyverse, flextable, metafor, orchaRd)
 ```
 
-Analysis of OA_activitydat_20190302_BIOL3207.csv to generate summary statistics (mean, SD, N) for each fish species average activity for each treatment
+Analysis of OA_activitydat_20190302_BIOL3207.csv to generate summary statistics (mean, SD, N) for each fish species average activity for each treatment group
 ```{r}
 data <- read_csv("OA_activitydat_20190302_BIOL3207.csv")
 data_clean <- data[which(complete.cases(data)),] # Remove data points which are incomplete
@@ -70,10 +70,32 @@ ggplot(meta_data, aes(x=ctrl.mean, y=oa.mean))+
   geom_point()
 ```
 
-From the data summary and plot there are two clear outlier data points with very high means for both the control and treatment conditions. This will dramatically skew the data if left in, so these two points will be removed. 
+```{r}
+ggplot(meta_data, aes(x=ctrl.sd, y=oa.sd))+
+  geom_point()
+```
+
+From the data summary and plot there are four clear outlier data points with very high means and standard deviations for both the control and treatment conditions. This will dramatically skew the data if left in, so these four points will be investigated. 
 
 ```{r}
-meta_data <- meta_data %>% filter(meta_data$ctrl.mean<25000 & meta_data$oa.mean<25000)
+meta_data %>% filter(meta_data$ctrl.sd>5000)
+```
+
+It seems like the seemingly outlier data could be due to all four rows investigating the larvae life stage, could be related to the species each study looked at or could be a measurement error in both of the studies. Let's first investigate all of the larvae data.
+
+```{r}
+meta_data %>% filter(meta_data$`Life stage`=="Larvae")
+```
+
+There are plenty of other data points for the Larvae life stage which seem to fit with the rest of the data. Let's investigate the fish species. 
+
+```{r}
+meta_data %>% filter(meta_data$Species=="Atherina presbyter"|meta_data$Species=="Clupea harengus")
+```
+
+Again there is other data for both species which fits with the rest of the data. It seems like these two studies have extremely high values possibly due to a measurement difference or a unit error. As such, it seems reasonable to exclude both of these studies from the meta-data. 
+```{r}
+meta_data <- meta_data %>% filter(meta_data$Title!="Effects of ocean acidification on the swimming ability, development and biochemical responses of sand smelt larvae" & meta_data$Title!="Growth performance and survival of larval Atlantic herring, under the combined effects of elevated temperatures and CO2")
 ```
 
 
@@ -86,15 +108,21 @@ effect_sizes <- metafor::escalc(measure = "ROM",
                                 m1i = ctrl.mean, m2i = oa.mean, 
                                 sd1i = ctrl.sd, sd2i = oa.sd, 
                                 ri = r_corr,
+                                var.names=c("lnRR","V_lnRR"),
                                 data = meta_data)
 effect_sizes <- effect_sizes %>% mutate(residual = 1:n())
 ```
 
 Meta-analytic model fitted to the data that controls for the sampling variance of lnRR. The model should include a random effect of study and observation. Use metafor’s rma.mv() function.
 ```{r}
-model <- metafor::rma.mv(data=effect_sizes, yi=yi, V=vi, 
+model <- metafor::rma.mv(lnRR~1, V=V_lnRR, 
+                         method="REML",
                          random=list(~1|Study,
-                                     ~1|Behavioural.metric))
+                                     ~1|Behavioural.metric,
+                                     ~1|residual),
+                         dfs = "contain",
+                         test="t",
+                         data=effect_sizes)
 model
 ```
 
@@ -105,31 +133,53 @@ orchaRd::i2_ml(model, data = effect_sizes)
 
 Written paragraph about the findings and what they mean. Support with a figure. Correct presentation and interpretation of overall meta-analytic mean and measures of uncertainty around the mean estimate (e.g., 95% confidence intervals). Measures of heterogeneity in effect size estimates across studies (i.e., I2 and/or prediction intervals - see predict() function in metafor). Forest plot showing the mean estimate, 95% confidence interval, and prediction interval with clearly labelled axes, number of samples and studies plotted on figure
 
-Overall meta-analytic mean is -0.1845. This means that for every 1 increase in the control mean, the treatment mean increases by 0.8155. 
+```{r}
+ggplot(meta_data, aes(x=ctrl.mean, y=oa.mean))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  labs(x="Means of control groups", y="Means of treatment groups")
+```
+
+Forest plot showing the mean estimate, 95% confidence interval, and prediction interval with clearly labelled axes, number of samples and studies plotted on figure.
+```{r}
+metafor::forest(model)
+```
+
+
+Overall meta-analytic mean is -0.1845. This means that for every 1 increase in the control mean, the treatment mean increases by 0.8155 (1-0.1845). 
 95% confidence interval is -0.4066 to 0.0375. This confidence interval includes 0 which is the null hypothesis so there is no statistical significance. It is very possible that there is no difference between the control and treatment conditions. 
 There is a significant amount of heterogeneity among effects, with Q=736,088,491, df=798, p=<0.0001. Proportion of variance among effects after removing sampling variation is 100%. Differences between studies explains 12% of the effect size variation, and differences between Behavioural metric explains 88% of the effect size variation. 
 
 Generate funnel plot. Visually assess the possibility of publication bias.
 ```{r}
-metafor::funnel(x = effect_sizes$yi, vi = effect_sizes$vi, 
+metafor::funnel(x = effect_sizes$lnRR, vi = effect_sizes$V_lnRR, 
                 yaxis = "seinv", digits = 2, 
                 level = c(0.1, 0.05, 0.01), 
                 shade = c("white", "gray55", "gray 75"), las = 1, 
-                xlab = "Correlation Coefficient (r)", legend = TRUE)
+                xlab = "Log response ratio (lnRR)", atransf=tanh, legend = TRUE)
 ```
 
 
 Generate a time-lag plot. Assess how effect sizes may or may not have changed through time.
 ```{r}
-
+ggplot(effect_sizes, aes(y = lnRR, x = Year..online., size = 1/sqrt(V_lnRR))) + 
+  geom_point(alpha = 0.30) + 
+  geom_smooth(method = lm, col = "red", show.legend = FALSE) + 
+  labs(x = "Online Publication Year", y = "Log Response Ratio (lnRR)", size = "Precision (1/SE)") + 
+  theme_classic()
 ```
 
 
 Formal meta-regression model that includes year as a moderator (fixed effect) to test for time-lag bias.
+```{r}
+
+```
 
 Formal meta-regression model that includes inverse sampling variance (1/variance of log response ratio) to test for file-drawer biases
 
 Written paragraph about the meta-regression results. What type of publication bias, if any, appears to be present in the data? If publication bias is present, what does it mean and what might be contributing to such bias?
+
+The log-response ratio is definitely converging on the value of 0 over time. In the first couple of years, there is a strong bias towards studies with negative log response ratios. Then in the middle there is a bias towards studies with positive log response ratios 
 
 Identify any studies contributing to publication bias. How do your updated meta-analysis results compare with a meta-analysis by Clement et al? Are there any concerns about these studies? If so, describe using references to existing papers what concerns have been raised?
 
