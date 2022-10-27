@@ -6,28 +6,24 @@ output:
   bookdown::html_document2:
     code_folding: show
     number_sections: no
-    toc: yes
-    toc_depth: 6
-    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Here is my [GitHub Repository](https://github.com/nicolelehmann/BIOL3207_Report2)
+
+
 #### Load required packages
-```{r}
+```{r loadpacks, message=FALSE, results='hide'}
 library(pacman)
 p_load(bookdown, tidyverse, flextable, metafor, orchaRd)
 ```
 
 
-#### Link to GitHub Repository
-Here is my [GitHub Repository](https://github.com/nicolelehmann/BIOL3207_Report2)
-
-
-#### Analysis of OA_activitydat_20190302_BIOL3207.csv to generate summary statistics (mean, SD, N) for each fish species average activity for each treatment group
-```{r}
+#### Summary statistics for Clark et al. data
+```{r message=FALSE}
 data <- read_csv("OA_activitydat_20190302_BIOL3207.csv")
 data_clean <- data[which(complete.cases(data)),] # Remove data points which are incomplete
 data_clean <- select(data_clean, -...1) # Remove irrelevant column
@@ -37,7 +33,8 @@ summary_stats <- pivot_wider(data=summary_stats, names_from="treatment", values_
 summary_stats
 ```
 
-#### Merge these summary statistics with the meta-data in clark_paper_data.csv
+
+#### Merge summary statistics with the rest of the paper meta-data
 ```{r}
 clark_data <- read_csv("clark_paper_data.csv")
 clark_data <- clark_data %>% slice(rep(1:n(), each = 6)) #Copy row of info 6 times according to formatting of meta-analysis data set
@@ -60,7 +57,8 @@ clark_data <- mutate(clark_data,
 clark_data
 ```
 
-#### Merge this combined summary statistics/meta-data with the larger meta-analysis data set in ocean_meta_data.csv
+
+#### Merge Clark et al. data with the meta-analysis data set
 ```{r}
 meta_data <- read_csv("ocean_meta_data.csv")
 clark_data$`Pub year IF` <- as.character(clark_data$`Pub year IF`) #Changing variable class to character to match meta-analysis data set 
@@ -70,27 +68,31 @@ meta_data <- full_join(meta_data, clark_data)
 summary(meta_data)
 ```
 
-```{r}
+```{r treatmentmeansd, fig.align='center', fig.cap="Means and corresponding standard deviations for each treatment condition group"}
 ggplot(meta_data, aes(x=oa.mean, y=oa.sd))+
-  geom_point()
+  geom_point()+
+  labs(x="Mean for treatment groups", y="Standard deviation for treatment groups")
 ```
 
-From the data summary and plot there are four clear outlier data points with very high means and standard deviations for both the control and treatment conditions. This will dramatically skew the data if left in, so these four points will be investigated. 
+From the data summary and Fig. \@ref(fig:treatmentmeansd) there are four clear outlier data points with very high means and standard deviations for both the control and treatment conditions. This will dramatically skew the data if left in, so these four points will be investigated. 
 
 ```{r}
-meta_data %>% filter(meta_data$oa.mean > 2000)
+outliers <- meta_data %>% filter(meta_data$oa.mean > 2000)
+flextable(outliers)
 ```
 
 It seems like the outlier data points could be due to all four rows investigating the larvae life stage, could be related to the species each study looked at or could be a measurement/unit error in both of the studies. Let's first investigate all of the larvae data.
 
 ```{r}
-meta_data %>% filter(meta_data$`Life stage`=="Larvae")
+larv <- meta_data %>% filter(meta_data$`Life stage`=="Larvae")
+summary(larv)
 ```
 
 There are plenty of other data points for the Larvae life stage which seem to fit with the rest of the data, so this doesn't seem to be the reason for the high numbers. Let's investigate the fish species. 
 
 ```{r}
-meta_data %>% filter(meta_data$Species=="Atherina presbyter"|meta_data$Species=="Clupea harengus")
+AP_CH <- meta_data %>% filter(meta_data$Species=="Atherina presbyter"|meta_data$Species=="Clupea harengus")
+summary(AP_CH)
 ```
 
 Again there is other data for both species which fits with the rest of the data. It seems like these two studies have extremely high values possibly due to a measurement difference or a unit error. It is clear that there has been an error in the standardisation of values for the meta-analysis. As such, it seems reasonable to exclude both of these studies from the meta-data. 
@@ -100,8 +102,8 @@ meta_data <- meta_data %>% filter(meta_data$Title!="Effects of ocean acidificati
 ```
 
 
-#### Calculate the log response ratio (lnRR) effect size for every row of the dataframe using metafor’s escalc() function
-```{r}
+#### Calculate the log response ratio (lnRR) effect sizes
+```{r calclnRR, warning=FALSE}
 corr_stats <- cor.test(meta_data$ctrl.mean, meta_data$oa.mean, method="pearson")
 meta_data$r_corr <- corr_stats$estimate
 meta_data <- metafor::escalc(measure = "ROM", 
@@ -115,7 +117,10 @@ meta_data <- meta_data %>% mutate(residual = 1:n())
 ```
 
 ```{r}
-meta_data %>% filter(meta_data$V_lnRR<=0.0001)
+highvar <- meta_data %>% filter(meta_data$V_lnRR>50)
+flextable(highvar)
+lowvar <- meta_data %>% filter(meta_data$V_lnRR<=0.0001)
+flextable(lowvar)
 ```
 There are clearly some data points with extremely high variance compared to the vast majority of the studies. These will be excluded - data unreliable if variance is greater than 50, study must be severely under-powered. There are also some extremely small variances which will also be excluded. Expect variance to be greater than 0.0001 even for really high-powered studies. Looking at the studies, they all have relatively small sample sizes so would definitely expect biological variance to contribute to variance of the log response ratio. These extremely small variances are unrealistic and must be errors. 
 
@@ -126,34 +131,37 @@ meta_data <- meta_data %>% filter(meta_data$V_lnRR>0.0001)
 ```
 
 
-#### Meta-analytic model fitted to the data that controls for the sampling variance of lnRR. The model should include a random effect of study and observation. Use metafor’s rma.mv() function.
+#### Meta-analytic multivariate linear model with random effects of study and observation
 ```{r}
 model <- metafor::rma.mv(lnRR~1, V=V_lnRR, 
                          method="REML",
                          random=list(~1|Study,
-                                     ~1|Behavioural.metric,
-                                     ~1|residual),
+                                     ~1|Behavioural.metric),
                          dfs = "contain",
                          test="t",
                          data=meta_data)
 model
 ```
 
+
+#### Multivariate model heterogeneity tests
 ```{r}
 orchaRd::i2_ml(model, data = meta_data)
 ```
 
+```{r}
+predict(model)
+```
 
-#### Written paragraph about the findings and what they mean. Support with a figure. Correct presentation and interpretation of overall meta-analytic mean and measures of uncertainty around the mean estimate (e.g., 95% confidence intervals). Measures of heterogeneity in effect size estimates across studies (i.e., I2 and/or prediction intervals - see predict() function in metafor). 
 
 Overall meta-analytic mean is -0.1532. This means that for every 1 increase in the control mean, the treatment mean increases by 0.8468 (1-0.1532). 
 The 95% confidence interval is -0.3839 to 0.0776. This confidence interval includes 0 which is predicted under the null hypothesis, so there is no statistically significant difference between the treatment and control groups. The null hypothesis is retained. 
 
-As seen in Figure below, although there is variability between studies there is a general linear trend between the means of the control and treatment groups. For example, if the mean of the control group is 500, then the mean of the treatment group is also likely to be around 500. This shows that there is no statistical difference between the control and treatment groups, so there is no indication that ocean acidification alters behaviours. 
+As seen in Fig. \@ref(fig:conditionmeanmodel), although there is variability between studies there is a general linear trend between the means of the control and treatment groups. For example, if the mean of the control group is 500, then the mean of the treatment group is also likely to be around 500. This shows that there is no statistical difference between the control and treatment groups, so there is no indication that ocean acidification alters behaviours. 
 
-There is a significant amount of heterogeneity among effects, with Q=73,608.9522, df=789, p=<0.0001. Proportion of variance among effects after removing sampling variation is 99.87955%. Differences between studies explains 11.86475% of the effect size variation, and differences between Behavioural metric explains 69.29247% of the effect size variation. 
+There is heterogeneity among effects, indicated by Q=73,608.9522, df=789, p=<0.0001 (highly significant). Proportion of variance among effects after removing sampling variation is 99.87955%. An I^2 above 75% indicates a high level of heterogeneity. Only about 0.12% of variation seena cross effects is driven by sampling variance. Differences between studies explains 11.86475% of the effect size variation, and differences between Behavioural metric explains 69.29247% of the effect size variation. Prediction intervals give the range of values for effect size that would be expected from re-sampling the opulation 95% of the time. Gives a measure for how variable the effects are likely to be (broader interval = larger variability expected in effects)
 
-```{r}
+```{r conditionmeanmodel, message=FALSE, fig.align='center', fig.cap="Linear relationship between the mean of control and treatment groups in each study"}
 ggplot(meta_data, aes(x=ctrl.mean, y=oa.mean))+
   geom_point()+
   geom_smooth(method = "lm")+
@@ -163,15 +171,16 @@ ggplot(meta_data, aes(x=ctrl.mean, y=oa.mean))+
 #### Forest plot showing the mean estimate, 95% confidence interval, and prediction interval with clearly labelled axes, number of samples and studies plotted on figure.
 
 K (790) is the number of effect sizes, the brackets give the number of studies (90). The size of the effect is scaled by the precision of each effect size value. 
-```{r}
+
+```{r forestplot, fig.align='center', fig.cap="Forest plot showing the range of log response ratios with the point size indicating the precision of each effect size value"}
 orchaRd::orchard_plot(model, group = "Study", data = meta_data, xlab = "Log response ratio (lnRR)", angle = 45)
 ```
 
-It is clear that most of the studies are sitting around a log response ratio of 0, which indicates no difference between the control and treatment groups. Ocean acidification does not seem to have an effect on behaviour. 
+In Fig. \@ref(fig:forestplot), it is clear that most of the studies are sitting around a log response ratio of 0, which indicates no difference between the control and treatment groups. Ocean acidification does not seem to have an effect on behaviour. 
 
 #### Generate a funnel plot. Visually assess the possibility of publication bias.
 
-```{r}
+```{r funnelplot, fig.align='center', fig.cap="Funnel plot of log response ratio and precision"}
 metafor::funnel(x = meta_data$lnRR, vi = meta_data$V_lnRR, 
                 yaxis = "seinv", digits = 2, 
                 level = c(0.1, 0.05, 0.01), 
@@ -180,10 +189,10 @@ metafor::funnel(x = meta_data$lnRR, vi = meta_data$V_lnRR,
                 atransf=tanh, legend = TRUE)
 ```
 
-From the funnel plot, it seems that there is some publication bias towards negative log response ratios. There is a gap on the bottom right hand side of the funnel plot where low precision, potentially under-powered studies would have found a positive log response ratio. This shows that there is likely a file-drawer problem, as authors probably did not publish these results due to opposing previous study results with a high amount of standard error. 
+From the funnel plot in Fig. \@ref(fig:funnelplot), it seems that there is some publication bias towards negative log response ratios. There is a gap on the bottom right hand side of the funnel plot where low precision, potentially under-powered studies would have found a positive log response ratio. This shows that there is likely a file-drawer problem, as authors probably did not publish these results due to opposing previous study results with a high amount of standard error. 
 
 #### Generate a time-lag plot. Assess how effect sizes may or may not have changed through time.
-```{r}
+```{r timelag, fig.align='center', fig.cap="Time-lag plot of the log response ratio and online publication year with the point size indicating the level of precision"}
 ggplot(meta_data, aes(y = lnRR, x = Year..online., size = 1/sqrt(V_lnRR))) + 
   geom_point(alpha = 0.30) + 
   geom_smooth(method = lm, col = "red", show.legend = FALSE) + 
@@ -191,13 +200,12 @@ ggplot(meta_data, aes(y = lnRR, x = Year..online., size = 1/sqrt(V_lnRR))) +
   theme_classic()
 ```
 
-
 #### Formal meta-regression model that includes year as a moderator (fixed effect) to test for time-lag bias.
 ```{r}
 metafor::rma(yi = lnRR, vi = V_lnRR, method = "FE", data = meta_data)
 ```
 
-There is a highly significant time-lag bias in this meta-data. 
+There is a highly significant time-lag bias in this meta-data. Esimate = weighted mean effect size along with standard error. Effect size is very close to 0 (null hypothesis). I^2 and H^2 give the proportion of variability that exists across effect sizes when sampling variability is removed. There is a lot of additional variation in effect sizes which is not due to chance sampling variability. Test for heterogeneity is highly significant, because null hypothesis is that the effect sizes come from a homogeneous population and are therefore estimating thes ame underlying mean effect. The high heterogeneity suggests that there are differing "true" means between studies. 
 
 #### Formal meta-regression model that includes inverse sampling variance (1/variance of log response ratio) to test for file-drawer biases
 ```{r}
@@ -222,4 +230,4 @@ The log-response ratio is definitely converging on the value of 0 over time. In 
 
 #### Identify any studies contributing to publication bias. How do your updated meta-analysis results compare with a meta-analysis by Clement et al? Are there any concerns about these studies? If so, describe using references to existing papers what concerns have been raised?
 
-
+Any studies contributing to publication bias?? 
