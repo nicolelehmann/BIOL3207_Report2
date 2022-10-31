@@ -1,5 +1,7 @@
 # BIOL3207_Report2
  
+A meta-analysis was performed to determine whether ocean acidification has an effect on behaviour. Data analysis revealed that there is in fact no relationship between ocean acidification and fish behaviour, and the null hypothesis was retained. A publication bias towards negative log response ratios and a time-lag bias were both noted. 
+ 
 Meta-data has the following columns:
 Study	- Code for each individual study
 Authors	- Authors of each paper
@@ -28,4 +30,3 @@ lnRR - The log response ratio
 V_lnRR - The variance of the log response ratio
 residual - A count of the row number
 
-Meta-analysis Workflow:

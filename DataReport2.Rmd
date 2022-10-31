@@ -119,7 +119,7 @@ flextable(highvar)
 lowvar <- meta_data %>% filter(meta_data$V_lnRR<=0.0001)
 flextable(lowvar)
 ```
-There are clearly some data points with an extremely high log response ratio variance compared to the vast majority of the data. These will be excluded because data with such a high variance must be severely under-powered and therefore unreliable. There are also some extremely small variances which will also be excluded. Even for really high-powered studies, the variance would be expected to be greater than 0.0001. Looking at the studies, they all have relatively small sample sizes so one would definitely expect biological variance to contribute to a greater variance of the log response ratio. These extremely small variances are unrealistic so the studies will be assumed to either have errors or be a fluke and will be excluded. 
+There are clearly some data points with an extremely high log response ratio variance compared to the vast majority of the data. These data points have a log response ratio magnitudes higher than most of the data. These will be excluded because data with such a high variance must be severely under-powered and therefore unreliable. There are also some extremely small variances which will also be excluded. Even for really high-powered studies, the variance would be expected to be greater than 0.0001. Looking at the studies, they all have relatively small sample sizes so one would definitely expect biological variance to contribute to a greater variance of the log response ratio. These extremely small variances are unrealistic so the studies will be assumed to either have errors or be a fluke and will be excluded. 
 
 Filter out high and low variances
 ```{r}
@@ -151,11 +151,11 @@ predict(model)
 ```
 
 
-The overall meta-analytic mean is -0.1532. This means that for every 1 increase in the control mean, the treatment mean increases by 0.8468 (1-0.1532). The 95% confidence interval is -0.3839 to 0.0776. This confidence interval includes 0 which is predicted under the null hypothesis, so there is no statistically significant difference between the treatment and control groups. The null hypothesis is retained. 
+The overall meta-analytic mean is 0.0396. This means that for every 1 increase in the control mean, the treatment mean increases by 1.0396. The 95% confidence interval is -0.0902 to 0.1694. This confidence interval includes 0 which is predicted under the null hypothesis, so there is no statistically significant difference between the treatment and control groups. The null hypothesis is retained that ocean acidification does not have any effect on behaviour. 
 
 As seen in Fig. \@ref(fig:conditionmeanmodel), although there is some variability between studies there is a general linear trend between the means of the control and treatment groups. For example, if the mean of the control group is 500, then the mean of the treatment group is also likely to be around 500. This shows that there is no statistical difference between the control and treatment groups, so there is no indication that ocean acidification alters behaviours. 
 
-There is heterogeneity among effects, indicated by Q=73,608.9522, df=789, p=<0.0001 (highly significant). The proportion of variance among effects after removing sampling variation is 99.87955%. An I^2 above 75% indicates a high level of heterogeneity. Only about 0.12% of variation seen across effects is driven by sampling variance. Differences between studies explains 11.86475% of the effect size variation, and differences between Life stage explains 69.29247% of the effect size variation. Prediction intervals give the range of values for effect size that would be expected from re-sampling the population 95% of the time. Gives a measure for how variable the effects are likely to be (broader interval = larger variability expected in effects)
+There is heterogeneity among effects, indicated by Q=73,608.95, df=786, p=<0.0001 (highly significant). The proportion of variance among effects after removing sampling variation is 96.5%. An I^2 above 75% indicates a high level of heterogeneity. Only about 3.5% of variation seen across effects is driven by sampling variance. Differences between studies explains 96.5% of the effect size variation, and differences between Life stage explains 0.000017% of the effect size variation. The prediction intervals of -1.1452 to 1.2244 give the range of effect size values that would be expected 95% of the time from re-sampling the population. This gives a measure for how variable the effects are likely to be, and an interval of around -1 to 1 is a relatively narrow interval so there should be relatively little variation in the effect size obtained if the population was re-sampled in additional experiments.
 
 ```{r conditionmeanmodel, message=FALSE, fig.align='center', fig.cap="Linear relationship between the mean of control and treatment groups in each study"}
 ggplot(meta_data, aes(x=ctrl.mean, y=oa.mean))+
@@ -174,7 +174,7 @@ lifestage_model <- metafor::rma.mv(lnRR~Life.stage, V=V_lnRR,
 lifestage_model
 ```
 
-Interpretation of Life stage as part of model rather than just random effect. 
+This is a multivariate model accounting for Life stage as a potential variable contributing to the effect sizes obtained in each study. However, as seen in the estimates, the adult life stage effect size is very close to 0, and although the juvenile, larvae and not provided life stages all have a slightly smaller effect size than the adult, none of these are even close to being significantly different as they are all very close to 0 as well. It doesn't appear that life stage is affecting the effect size. 
 
 #### Forest plot
 
@@ -186,7 +186,6 @@ In Fig. \@ref(fig:forestplot), K indicates the number of effect sizes in the gro
 
 
 #### Funnel plot
-Generate a funnel plot. Visually assess the possibility of publication bias.
 
 ```{r funnelplot, fig.align='center', fig.cap="Funnel plot of log response ratio and precision"}
 metafor::funnel(x = meta_data$lnRR, vi = meta_data$V_lnRR, 
@@ -208,7 +207,7 @@ ggplot(meta_data, aes(y = lnRR, x = Year..online., size = 1/sqrt(V_lnRR))) +
 ```
 
 #### Formal meta-regression model with year as a moderator
-Formal meta-regression model that includes year as a moderator (fixed effect) to test for time-lag bias.
+
 ```{r}
 meta_data <- meta_data  %>% mutate(Year_c = Year..online. - mean(Year..online.))
 #metafor::rma(yi = lnRR, vi = V_lnRR, method = "FE", data = meta_data)
@@ -220,7 +219,7 @@ metafor::rma.mv(lnRR ~ Year_c, V = V_lnRR,
                    data=meta_data)
 ```
 
-There is a highly significant time-lag bias in this meta-data. Estimate = weighted mean effect size along with standard error. Effect size is very close to 0 (null hypothesis). I^2 and H^2 give the proportion of variability that exists across effect sizes when sampling variability is removed. There is a lot of additional variation in effect sizes which is not due to chance sampling variability. Test for heterogeneity is highly significant, because null hypothesis is that the effect sizes come from a homogeneous population and are therefore estimating thes ame underlying mean effect. The high heterogeneity suggests that there are differing "true" means between studies. 
+There is a highly significant time-lag bias in this meta-data. As seen in the time-lag plot Fig. \@ref(fig:timelag), over time the effect sizes converge on 0. In the meta-regression model, the effect size is very close 0, so the null hypothesis is retained. However, the online publication year which is the moderator is highly significant, indicating the time-lag bias visible in the plot. 
 
 #### Formal meta-regression model that includes inverse sampling variance (1/variance of log response ratio) to test for file-drawer biases
 ```{r}
@@ -238,9 +237,7 @@ r2_time <- orchaRd::r2_ml(metareg_time)
 r2_time
 ```
 
-Significant results indicate file-drawer biases. 
-
-This shows that there is likely a file-drawer problem, as authors probably did not publish these results due to opposing previous study results with a high amount of standard error. 
+These statistically significant results indicate file-drawer biases. The year that results were published can explain a large amount of the variation in effect sizes, where earlier publications found larger effect sizes. The earlier publications found majority negative log response ratios. This shows that there is likely a file-drawer problem, as authors probably did not publish the positive log response ratio results due to opposing previous study results. One would want to have a high amount of precision before publishing findings that oppose previous studies, especially if they were published in high profile journals.
 
 #### Written paragraph about the meta-regression results. What type of publication bias, if any, appears to be present in the data? If publication bias is present, what does it mean and what might be contributing to such bias?
 
@@ -249,13 +246,9 @@ The log-response ratio is definitely converging on the value of 0 over time. In 
 #### Identify any studies contributing to publication bias. How do your updated meta-analysis results compare with a meta-analysis by Clement et al? Are there any concerns about these studies? If so, describe using references to existing papers what concerns have been raised?
 
 Any studies contributing to publication bias?? 
-```{r}
-meta_data %>% filter(meta_data$lnRR<0 & meta_data$V_lnRR<1)
-```
 
-This study stands out in the funnel plot above as having a relatively high negative log response ratio and relatively high precision compared to other studies. This study is therefore contributing to the publication bias towards negative log response ratios. 
+The study that stands out in the funnel plot above as having a relatively high negative log response ratio and relatively high precision compared to other studies is likely contributing to publication bias. With high precision and a significant effect size, this study likely had high impact when it was published. However, the meta-analysis has found that this is a false finding. 
 
 A meta-analysis by Clements et al. of the impacts of ocean acidification on fishe behaviour looked at 91 studies. They concluded that the large effects described in initial studies have disappeared in subsequent studies. This is the same conclusion that was found in this meta-analysis. 
 Clements et al. explained the results through findings that the initial studies typically had small sample sizes but were published in high-impact journals and therefore had a large influence on the field. 
-More references... 
 
